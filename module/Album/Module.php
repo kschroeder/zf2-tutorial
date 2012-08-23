@@ -29,6 +29,11 @@ class Module
                     $table = new AlbumTable($dbAdapter);
                     return $table;
                 },
+                'servicesoundcloud'		=> function($sm) {
+                	$config = $this->getConfig()['soundcloud'];
+                	$sound = new \Services_Soundcloud($config['key'], $config['secret'], $config['callback'], !$config['production']);
+                	return $sound;
+                }
             ),
         );
     }    

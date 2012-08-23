@@ -30,4 +30,11 @@ return array(
             'album' => __DIR__ . '/../view',
         ),
     ),
+	'soundcloud'	=> array(
+		'baseUrl'	=> 'http://api.soundcloud.com',
+		'key'		=> '17cd9a8627345575ea172b5f7ef28b32',
+		'secret'	=> '38e3ea2ca1e3c1fb3815b28d316916b8',
+		'callback'	=> null,
+		'production'=> false
+	),
 );
