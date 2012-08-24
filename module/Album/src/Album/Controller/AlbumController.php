@@ -9,69 +9,97 @@ use Zend\View\Model\ViewModel;
 use Album\Model\Album;
 use Album\Form\AlbumForm;
 
-class AlbumController extends AbstractActionController
-{
-    protected $albumTable;
-
-    public function indexAction()
+class AlbumController extends AbstractActionController {
+	protected $albumTable;
+	public function indexAction() {
+		$albumData = $this->getAlbumTable()->fetchAll();
+		
+		$albums = array();
+		
+		foreach ( $albumData as $album ) {
+			$albums[] = $album->id;
+		}
+		
+		return new ViewModel(array(
+			'albums' 	=> $albums
+		));
+    }
+    
+    public function albuminfoAction()
     {
-    	$albumData = $this->getAlbumTable()->fetchAll();
-    	$albumMeta = array();
-    	$albums = array();
-    	foreach ($albumData as $album) {
-    		$albums[] = $album;
-    		$params = array(
-    			'entity'		=> 'musicTrack',
-    			'term'			=> $album->title
-    		);
+    	$albumId = $this->getRequest()->getQuery('album');
+    	$album = $this->getAlbumTable()->getAlbum($albumId);
+    	$meta = zend_disk_cache_fetch('album-meta-' . $albumId);
+    	
+    	$model =new ViewModel(
+    		array(
+    			'album'		=> $album,
+    			'albumMeta'	=> $meta
+    		)
+    	);
+    	
+    	$model->setTerminal(true);
+    	return $model;
+    }
+    
+    public function processalbumAction()
+    {
+    	
+    	$params = \ZendJobQueue::getCurrentJobParams();
+    	if (!$params) return $this->getResponse();
+    	$albumId = $params['albumId'];
+    	
+    	//$albumId = $this->getRequest()->getQuery('albumId');
+    	$album = $this->getAlbumTable()->getAlbum($albumId);
+    	if (!$album) return $this->getResponse();
+    	$params = array (
+    		'entity' 	=> 'musicTrack',
+    		'term' 		=> $album->title
+    	);
     		
-    		$url = 'http://itunes.apple.com/search?' . http_build_query($params);
-    		$results = file_get_contents($url);
-    		$filter = new Alnum();
-    		if ($results && ($results = json_decode($results, true)) != false) {
-    			$users = array();
-    			foreach ($results['results'] as $result) {
-    				if ($filter->filter($result['artistName']) == $filter->filter($album->artist)) {
-    					if (!isset($albumMeta[$album->id])) {
-    						$albumMeta[$album->id] = array(
-    							'image'		=> $result['artworkUrl60'],
-    							'genre'		=> $result['primaryGenreName'],
-    							'tracks'	=> array()		
-    						);
+    	$url = 'http://itunes.apple.com/search?' . http_build_query($params);
+    	$results = file_get_contents($url);
+    	$filter = new Alnum ();
+    	$albumMeta = array();
+    	if ($results && ($results = json_decode($results, true)) != false) {
+    		$users = array();
+    		foreach ($results['results'] as $result) {
+    			if ($filter->filter ($result['artistName']) == $filter->filter($album->artist)
+    					&& $filter->filter($result['collectionName']) == $filter->filter($album->title)) {
+    				if (!isset($albumMeta['image'])) {
+    					$albumMeta = array(
+    						'image' 	=> $result['artworkUrl60'],
+    						'genre' 	=> $result['primaryGenreName'],
+    						'tracks' 	=> array()
+    					);
+    				}
+    	
+    				$albumMeta['tracks'][$result['trackName']] = array (
+    					'title' 		=> $result ['trackName'],
+    					'soundcloud' 	=> array ()
+    				);
+    	
+    				$config = $this->getServiceLocator()->get('config');
+    				
+    				$sResults = file_get_contents(
+    						'http://api.soundcloud.com/tracks.json?q='
+    				 		. urlencode($result['trackName'])
+    				 		. '&client_id='
+    				 		. $config['soundcloud']['key']
+    				);
+    				error_log('http://api.soundcloud.com/tracks.json?q=' . urlencode($result['trackName']));
+    				$sResults = json_decode($sResults, true);
+    				$sResults = array_slice($sResults, 0, 3);
+    				foreach ($sResults as $sResult) {
+    					if (strpos ($sResult['title'], $result['trackName']) !== false) {
+    						$albumMeta['tracks'][$result['trackName']]['soundcloud'][] = $sResult;
     					}
-    					$config = $this->getServiceLocator()->get('config');
-    					
-    					$sResults = file_get_contents($config['soundcloud']['baseUrl'] . '/tracks.json?q=' . urlencode($result['trackName']) . '&client_id=' . $config['soundcloud']['key']);
-    					error_log($config['soundcloud']['baseUrl'] . '/tracks.json?q=' . urlencode($result['trackName']));
-    					$sResults = json_decode($sResults, true);
-    					foreach ($sResults as $sResult) {
-	    					$user = $sResult['user'];
-	    					
-	    					if (isset($users[$user['id']])) {
-	    						$userResults = $users[$user['id']];
-	    					} else {
-		    					$userResults = file_get_contents($config['soundcloud']['baseUrl'] . '/users/' . $user['id'] . '.json?client_id=' . $config['soundcloud']['key']);
-		    					error_log($config['soundcloud']['baseUrl'] . '/users/' . $user['id'] . '.json');
-		    					$userResults = json_decode($userResults, true);
-		    					$users[$user['id']] = $userResults;
-	    					}
-	    					if ($userResults['full_name'] == $album->artist) {
-		    					$albumMeta[$album->id]['tracks'][] = array(
-		    							'title'			=> $result['trackName'],
-		    							'soundcloud'	=> $sResult
-		    					);
-		    					break;
-	    					}
-    					}
-	    			}
+    				}
     			}
     		}
-    	}
-    	
-        return new ViewModel(array(
-            'albums' 	=> $albums,
-        	'albumMeta'	=> $albumMeta
-        ));
+   		}
+    	zend_disk_cache_store('album-meta-' . $albumId, $albumMeta);
+    	return $this->getResponse();
     }
 
     public function addAction()
@@ -86,8 +114,14 @@ class AlbumController extends AbstractActionController
             $form->setData($request->getPost());
             if ($form->isValid()) {
                 $album->exchangeArray($form->getData());
-                $this->getAlbumTable()->saveAlbum($album);
-
+                $id = $this->getAlbumTable()->saveAlbum($album);
+				$jq = new \ZendJobQueue();
+				$jq->createHttpJob(
+					'http://' . $_SERVER['HTTP_HOST'] . '/album/processalbum',
+					array(
+						'albumId'	=> $id
+					)
+				);
                 // Redirect to list of albums
                 return $this->redirect()->toRoute('album');
             }
@@ -138,6 +172,7 @@ class AlbumController extends AbstractActionController
             if ($del == 'Yes') {
                 $id = (int)$request->getPost()->get('id');
                 $this->getAlbumTable()->deleteAlbum($id);
+                zend_disk_cache_delete('album-meta-' . $id);
             }
 
             // Redirect to list of albums

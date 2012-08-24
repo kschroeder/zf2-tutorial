@@ -46,9 +46,11 @@ class AlbumTable extends AbstractTableGateway
         $id = (int)$album->id;
         if ($id == 0) {
             $this->insert($data);
+            return $this->getLastInsertValue();
         } else {
             if ($this->getAlbum($id)) {
                 $this->update($data, array('id' => $id));
+                return $id;
             } else {
                 throw new \Exception('Form id does not exist');
             }

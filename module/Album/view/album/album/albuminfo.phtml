@@ -1,0 +1,43 @@
+<?php
+
+$img = '';
+if ($albumMeta === false ) {
+	$img = '<img src="/images/spinner-light.gif">';
+} else if ($albumMeta && isset($albumMeta['image'])) {
+	$img = sprintf('<img src="%s">', $albumMeta['image']);
+}
+?>
+<tr id="container-<?php echo $album->id; ?>" class="<?php echo ($albumMeta!==false)?'completed':'working'; ?>">
+	<td><?php echo $img ?></td>
+    <td><?php echo $this->escapeHtml($album->title);?></td>
+    <td><?php echo $this->escapeHtml($album->artist);?></td>
+    <td>
+        <a href="<?php echo $this->url('album',
+            array('action'=>'edit', 'id' => $album->id));?>">Edit</a>
+        <a href="<?php echo $this->url('album',
+            array('action'=>'delete', 'id' => $album->id));?>">Delete</a>
+    </td>
+</tr>
+<?php if ($albumMeta && count($albumMeta['tracks'])): ?>
+	<?php foreach ($albumMeta['tracks'] as $track): ?>
+		<tr class="track">
+			<td></td>
+			<td colspan="3"><?php echo $this->escapeHtml($track['title']); ?>
+			<div style="margin-left: 30px; width: 500px; " data-album-id="<?php echo $album->id?>" class="soundcloud-track">
+			<?php foreach ($track['soundcloud'] as $sc): ?>
+			<iframe width="100%" height="166" scrolling="no" frameborder="no" src="http://w.soundcloud.com/player/?url=<?php echo urlencode($sc['uri']); ?>&amp;auto_play=false&amp;show_artwork=true&amp;color=ff5400"></iframe>
+			<?php endforeach; ?>
+			</div>   
+			</td>
+		</tr>
+	<?php endforeach; ?>
+<?php endif;?>
+<?php if ($albumMeta === false): ?>
+<script type="text/javascript">
+setTimeout(function() {
+	$.get('/album/albuminfo?album=<?php echo $album->id; ?>', function(result) {
+		$('#container-<?php echo $album->id; ?>').replaceWith(result);
+	});
+}, 1000);
+</script>
+<?php endif; ?>
